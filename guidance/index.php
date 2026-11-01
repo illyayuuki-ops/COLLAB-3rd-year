@@ -5,14 +5,14 @@ require __DIR__.'/domain.php';
 require __DIR__.'/workbench.php';
 $u = g_actor();
 // Capture before loading view data so concurrent updates cannot be hidden by a newer signature.
-$initialSignature = g_signature($u);
+$initialSignature = (($_GET['view'] ?? '') === 'reports') ? '' : g_signature($u);
 $uid = (int)$u['id'];
 $staff = g_staff($u);
 $head = g_head($u);
 if (isset($_GET['view']) && !is_string($_GET['view'])) g_denied('Invalid page.',400);
 $view = (string)($_GET['view'] ?? 'overview');
 $id = max(0, (int)($_GET['id'] ?? 0));
-$titles = ['intake'=>'Guidance intake','review'=>'Request review','register'=>'Certificate register','cohort'=>'Cohort invitations','notifications'=>'Notifications','help'=>'Guidance help & services','operations'=>'Guidance operations','overview' => 'Guidance Office','requests' => 'Guidance requests','students' => 'Student directory','walkin' => 'Record a walk-in','appointments' => 'Appointments','events' => 'Activities','event' => 'Activity details','programs' => 'Programs','calendar' => 'Guidance calendar','history' => 'Certificates & credits','knowledge' => 'Resources','reports' => 'Aggregate reports','team' => 'Guidance team','categories' => 'Guidance services','privacy' => 'Privacy reviews','audit' => 'Guidance audit','settings' => 'Settings'];
+$titles = ['intake'=>'Guidance intake','review'=>'Request review','register'=>'Certificate register','cohort'=>'Cohort invitations','notifications'=>'Notifications','help'=>'Guidance help & services','operations'=>'Guidance operations','overview' => 'Guidance Office','requests' => 'Guidance requests','students' => 'Student directory','walkin' => 'Record a walk-in','appointments' => 'Appointments','events' => 'Activities','event' => 'Activity details','programs' => 'Programs','calendar' => 'Guidance calendar','history' => 'Certificates & credits','knowledge' => 'Resources','reports' => 'Guidance reports','team' => 'Guidance team','categories' => 'Guidance services','privacy' => 'Privacy reviews','audit' => 'Guidance audit','settings' => 'Settings'];
 if (!isset($titles[$view])) {
     g_denied('Page not found.', 404);
 }if (in_array($view, ['reports','walkin'], true) && !$staff) {
@@ -100,16 +100,24 @@ function geform(array $e = []): string
 }
 define('GUIDANCE_LAYOUT_SECTIONS',true);
 require __DIR__.'/layout-sections.php';
+if ($view === 'reports') {
+    $cases = $events = $appointments = $students = $certs = [];
+} else {
 $cases = gw_cases($u);
 $events = $staff ? gall('SELECT * FROM gd_events ORDER BY starts_at DESC') : gall("SELECT e.* FROM gd_events e JOIN gd_invites i ON i.event_id=e.id WHERE i.user_id=? AND e.status<>'draft' ORDER BY e.starts_at DESC", [$uid]);
 $appointments = gall('SELECT a.*,u.full_name AS requester,c.full_name AS counselor FROM gd_appointments a JOIN users u ON u.id=a.user_id JOIN users c ON c.id=a.counselor_id'.($head ? '' : ($staff === 'counselor' ? ' WHERE a.counselor_id='.$uid : ' WHERE a.user_id='.$uid)).' ORDER BY a.starts_at DESC');
 $students = $staff ? gall("SELECT id,full_name,school_id FROM users WHERE role='student' AND status='active' AND verification='verified' ORDER BY full_name") : [];
 $certs = gall('SELECT * FROM gd_certificates WHERE user_id=? ORDER BY issued_at DESC', [$uid]);
+}
 // Validate new GET routes before rendering headers; no write action is introduced here.
 $workbenchFilters = [];
 try {
     if ($view === 'requests') $workbenchFilters = gw_filters($_GET);
-    if ($view === 'reports') $workbenchFilters = gw_report_filters($_GET);
+    if ($view === 'reports') {
+        require_once __DIR__.'/reports.php';
+        $report = rp_report($u, $_GET);
+        $workbenchFilters = $report['filters'];
+    }
     if ($view === 'students') {
         gx(in_array($staff, ['head','counselor'], true));
         $id = gw_id($_GET, 'id');
@@ -118,7 +126,7 @@ try {
         if ($id && !in_array($id, array_map('intval',array_column($workbenchDirectory,'id')),true)) g_denied('Student not found in your authorized directory.',404);
     }
 } catch (RuntimeException $ex) {
-    g_denied(in_array($ex->getCode(),[400,403],true)?$ex->getMessage():'Could not load this workspace.',in_array($ex->getCode(),[400,403],true)?$ex->getCode():500);
+    g_denied(in_array($ex->getCode(),[400,403,422],true)?$ex->getMessage():'Could not load this workspace.',in_array($ex->getCode(),[400,403,422],true)?$ex->getCode():500);
 }
 $grQuery=[];
 try {
@@ -143,6 +151,7 @@ page_start(is_filer($u) && $view === 'overview' ? 'Guidance services' : $titles[
 <div id="guidance" data-nav-scope="<?= e(hash('sha256', $uid.':'.($staff ?? 'student'))) ?>" data-state="<?= e(url('guidance/state.php')) ?>" data-sig="<?= e($initialSignature) ?>" data-action="<?= e(url('guidance/action.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
 <?php if (getenv('LCCT_SYNTHETIC_TEST') === '1'): ?><div class="alert warn">Synthetic local review database. No real school records or email delivery.</div><?php endif; ?>
 <?php
+if ($staff) echo '<p class="gd-buttons"><a class="btn btn-primary" href="'.e(url('guidance/staff.php')).'">Advanced staff workspace</a></p>';
 if (is_filer($u)) { require __DIR__.'/student-pages.php'; }
 if (is_filer($u) && $view === 'overview') {
     // The original student dashboard remains student/dashboard.php.
@@ -270,7 +279,7 @@ if (is_filer($u) && $view === 'overview') {
 <p class="gd-foot">Use your campus account for Guidance requests, appointments and activities. All times shown are Philippine local time. <span id="gd-live">Live updates · draft protection enabled</span></p>
 </div>
 <dialog id="gd-camera" aria-labelledby="gd-camera-title"><h2 id="gd-camera-title">Guidance QR check-in</h2><video autoplay muted playsinline></video><p id="gd-camera-note">Camera needs HTTPS or localhost. Manual entry remains available.</p><button class="btn" type="button" data-camera-close>Close camera</button></dialog>
-<script src="<?= e(url('guidance/assets/vendor/qrcode.js')) ?>"></script><script src="<?= e(url('guidance/assets/vendor/jsQR.js')) ?>"></script><script src="<?= e(url('guidance/assets/guidance.js')) ?>?v=<?= (int)filemtime(__DIR__.'/assets/guidance.js') ?>" defer></script>
+<?php if ($view !== 'reports'): ?><script src="<?= e(url('guidance/assets/vendor/qrcode.js')) ?>"></script><script src="<?= e(url('guidance/assets/vendor/jsQR.js')) ?>"></script><script src="<?= e(url('guidance/assets/guidance.js')) ?>?v=<?= (int)filemtime(__DIR__.'/assets/guidance.js') ?>" defer></script><?php endif; ?>
 <?php if ($view === 'team'): ?><script src="<?= e(url('guidance/assets/password.js')) ?>?v=<?= (int)filemtime(__DIR__.'/assets/password.js') ?>" defer></script><?php endif; ?>
 <?php if ($view === 'overview' && !is_filer($u)): ?><script src="<?= e(url('guidance/assets/overview.js')) ?>?v=<?= (int)filemtime(__DIR__.'/assets/overview.js') ?>" defer></script><?php endif; ?>
-<?php page_end(); ?>
+<?php require __DIR__.'/ai-launcher.php'; page_end(); ?>

@@ -1,5 +1,6 @@
 <?php
 require_once dirname(__DIR__).'/includes/guidance-password.php';
+require_once __DIR__.'/staff-core.php';
 
 function gx(bool $ok, string $msg = 'Not allowed.', int $status = 403): void
 {
@@ -137,7 +138,12 @@ function g_action(array $u, string $action, array $p): array
             }gx(in_array($a['status'], ['requested','confirmed'], true), 'Appointment is finished.', 409);
             if ($st === 'completed') {
                 gx($a['starts_at'] <= date('Y-m-d H:i:s'), 'Cannot complete a future appointment.', 409);
-            }gq('UPDATE gd_appointments SET status=?,updated_at=NOW() WHERE id=?', [$st,$id]);
+            }
+            if ($st==='confirmed' && ad_ready()) {
+                $buffer=ad_schedule((int)$a['counselor_id'],(int)$a['user_id'],$a['starts_at'],$a['ends_at'],$id,false);
+                gq("INSERT INTO gd_adv_appointments(appointment_id,buffer_minutes,reason,recorded_by,updated_at) VALUES(?,?,'',?,NOW()) ON DUPLICATE KEY UPDATE buffer_minutes=VALUES(buffer_minutes),version=version+1,updated_at=NOW()",[$id,$buffer,$uid]);
+            }
+            gq('UPDATE gd_appointments SET status=?,updated_at=NOW() WHERE id=?', [$st,$id]);
             if (gr_ready()) gr_notice((int)$a['user_id'],'Guidance appointment updated','appointments'); else notif_add($pdo, (int)$a['user_id'], null, 'Appointment updated', 'Open Guidance appointments for the current status.');
             $next .= '?view=appointments';
             break;
@@ -271,6 +277,9 @@ function g_action(array $u, string $action, array $p): array
             if (!$active || $role === 'administrator') {
                 gx(!(int)gq("SELECT COUNT(*) FROM tickets WHERE office_code='guide' AND assigned_to=? AND status NOT IN ('Closed','Cancelled')", [$member])->fetchColumn() && !gone("SELECT id FROM gd_appointments WHERE counselor_id=? AND status IN ('requested','confirmed')", [$member]), 'Reassign active cases and finish/cancel appointments first.', 409);
             }
+            if (ad_ready() && (!$active || $role !== ($old['guidance_role']??''))) {
+                gx(!gone("SELECT id FROM gd_adv_tasks WHERE owner_id=? AND status='open'",[$member]) && !gone("SELECT id FROM gd_adv_waitlist WHERE counselor_id=? AND status IN ('waiting','offered')",[$member]) && !gone("SELECT id FROM gd_adv_urgent WHERE (owner_id=? OR fallback_id=?) AND status<>'resolved'",[$member,$member]),'Reassign or finish staff follow-ups, appointment waitlists and urgent reviews before changing access.',409);
+            }
             gq('INSERT INTO gd_staff(user_id,guidance_role,active) VALUES(?,?,?) ON DUPLICATE KEY UPDATE guidance_role=VALUES(guidance_role),active=VALUES(active)', [$member,$role,$active]);
             gq('DELETE FROM gd_sessions WHERE user_id=?', [$member]);
             $id = $member;
@@ -343,22 +352,8 @@ function g_csv(array $rows): string
     }rewind($f);
     return stream_get_contents($f);
 }
-function g_reports(): array
+function g_reports(?array $actor = null): array
 {
-    $r = [];
-    foreach (['status', 'priority'] as $col) {
-        foreach (gall("SELECT $col AS label,COUNT(*) n FROM tickets WHERE office_code='guide' GROUP BY $col") as $row) {
-            $r[] = [$col, $row['label'], (int)$row['n'] < 5 ? '<5' : $row['n']];
-        }
-    }
-    foreach (gall('SELECT attendance AS label,COUNT(*) n FROM gd_invites GROUP BY attendance') as $row) {
-        $r[] = ['attendance', $row['label'], (int)$row['n'] < 5 ? '<5' : $row['n']];
-    }
-    $n = (int)gq("SELECT COUNT(*) FROM tickets t WHERE office_code='guide' AND ".sla_overdue_sql('t'))->fetchColumn();
-    $r[] = ['SLA', 'Overdue working cases', $n < 5 ? '<5' : $n];
-    $resolution = gone("SELECT COUNT(*) n,AVG(TIMESTAMPDIFF(SECOND,created_at,resolved_at))/3600 hours FROM tickets WHERE office_code='guide' AND resolved_at IS NOT NULL");
-    $r[] = ['Hours', 'Mean resolution (at least 5 completed cases)', (int)$resolution['n'] < 5 ? 'Suppressed' : round((float)$resolution['hours'], 1)];
-    $response = gone("SELECT COUNT(*) n,AVG(TIMESTAMPDIFF(SECOND,x.created_at,x.first_reply))/3600 hours FROM (SELECT t.created_at,(SELECT MIN(r.created_at) FROM replies r JOIN users u ON u.id=r.user_id WHERE r.ticket_id=t.id AND r.is_internal=0 AND u.role='admin') first_reply FROM tickets t WHERE t.office_code='guide') x WHERE x.first_reply IS NOT NULL");
-    $r[] = ['Hours', 'Mean first public staff reply (at least 5 cases)', (int)$response['n'] < 5 ? 'Suppressed' : round((float)$response['hours'],1)];
-    return $r;
+    require_once __DIR__.'/reports.php';
+    return rp_export_rows(rp_report($actor ?? g_actor(), []));
 }

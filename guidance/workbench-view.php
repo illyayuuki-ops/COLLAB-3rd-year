@@ -1,5 +1,14 @@
 <?php
 if (!isset($u,$view) || !function_exists('gcard')) { http_response_code(404); exit; }
+// All report rendering shares the role-scoped released model; no legacy selector/data path.
+if ($view === 'reports') {
+    require_once __DIR__.'/reports.php';
+    require_once __DIR__.'/reports-view.php';
+    $report = $report ?? rp_report($u, $_GET);
+    echo '<link rel="stylesheet" href="'.e(url('guidance/assets/reports.css')).'?v='.(int)filemtime(__DIR__.'/assets/reports.css').'">';
+    echo rp_controls($report).rp_render($report);
+    return;
+}
 function gw_pager(array $p, string $view, array $f): string {
     $h='<nav class="gd-buttons gw-pagination" aria-label="Results pages"><span>'.e($p['total']).' results · Page '.e($p['page']).' of '.e($p['pages']).'</span>';
     if($p['page']>1)$h.='<a class="btn" href="'.e(gw_link($view,$f,['page'=>$p['page']-1])).'">Previous page</a>';
@@ -68,17 +77,4 @@ if($view==='requests') {
         $body='<p>'.($head?'Verified student accounts in the shared application.':'Only students with a Guidance case assigned to you or an appointment with you. Other counselors’ cases and appointments remain hidden.').'</p><p class="gd-note">Program / year / section are Guidance-scoped and must be verified against a named school source. Case and appointment totals below reflect your authorization, not a student’s complete school record.</p><form method="get" data-gfilter class="gw-filters">'.gh('view','students').gf('q','Search name, school ID or email','search',$f['q'],'maxlength="120"').(gr_ready()?gf('program','Program','text',$f['program']).gf('year_level','Year level','text',$f['year_level']).gf('section','Section','text',$f['section']):'').'<div class="gd-buttons"><button class="btn btn-primary" type="submit">Search students</button>'.gl('students','Reset').'</div></form>';
         echo gcard('Student directory',$body.gtable(['Student','School ID','Account','Authorized cases','Authorized appointments'],$rows,'No students match your search and current access.').gw_pager($p,'students',$f));
     }
-} elseif($view==='reports') {
-    $f=$workbenchFilters;$report=gw_analytics($u,$f);
-    $form='<form method="get" data-gfilter class="gw-filters">'.gh('view','reports').'<div class="gd-fields">'.gf('from','Intake from · inclusive','date',$f['from']).gf('to','Intake to · inclusive','date',$f['to']).gs('category','Case service',$categories,$f['category']).gs('counselor','Case counselor',$counselors,$f['counselor']).(gr_ready()?gf('program','Current academic program','text',$f['program']).gf('year_level','Current year level','text',$f['year_level']).gf('section','Current section','text',$f['section']):'').'</div><div class="gd-buttons"><button class="btn btn-primary" type="submit">Apply report filters</button>'.gl('reports','All time / reset').'<a class="btn" href="'.e(gw_link('reports',$f,['from'=>date('Y-m-d',strtotime('-29 days')),'to'=>date('Y-m-d')])).'">Last 30 days</a></div></form>';
-    echo gcard('Privacy-preserving totals','<p>Aggregate counts only. Cells below five are suppressed. No student identities or counseling text are included in charts or this export. Filtered reports are not anonymous data for public release: repeated comparisons may allow inference.</p>'.$form.'<p class="gd-note">Case charts follow an intake cohort: requests created in the selected date range (Philippine time), grouped by their current status, service and counselor. Response and resolution times describe that same cohort, not work completed during the period. Activity charts use the activity start date only, independent of case service / counselor / academic filters. Academic filters use current verified metadata, not historical enrollment snapshots.</p><p><a class="btn" href="'.e(url('guidance/workbench-export.php?'.http_build_query(['type'=>'reports']+$f))).'">Download filtered aggregate CSV</a></p>');
-    echo '<div class="gw-reports">';
-    foreach($report as $name=>$rows) {
-        $table=[];$max=1;foreach($rows as $r)if(is_numeric($r[1]))$max=max($max,(float)$r[1]);
-        foreach($rows as [$label,$value]) {
-            $bar=$name==='Overview'?'':'<div class="gw-bar-track" aria-hidden="true"><span class="gw-bar" style="width:'.(is_numeric($value)?round(100*(float)$value/$max,2):0).'%"></span></div>';
-            $table[]=[e($label),'<strong>'.e($value).'</strong>'.$bar];
-        }
-        echo gcard($name,gtable(['Group','Value'],$table,'No data in this intake cohort.').($name==='Overview'?'<p class="muted">Means require at least five eligible records. Target percentage requires at least five records in both outcome groups.</p>':'<p class="muted">Bars are relative to the largest displayed count. Suppressed cells have no bar.</p>'));
-    }echo '</div>';
 }

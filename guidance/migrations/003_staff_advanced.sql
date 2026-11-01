@@ -1,0 +1,71 @@
+CREATE TABLE IF NOT EXISTS gd_adv_policies (
+ id INT AUTO_INCREMENT PRIMARY KEY, purpose VARCHAR(30) NOT NULL, version_label VARCHAR(80) NOT NULL, title VARCHAR(160) NOT NULL, body TEXT NOT NULL, approval_ref VARCHAR(200) NOT NULL, approved_by INT NOT NULL, approved_at DATETIME NOT NULL, retired_at DATETIME NULL, UNIQUE(purpose,version_label), FOREIGN KEY(approved_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_plans (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NOT NULL UNIQUE, goal TEXT NOT NULL, actions TEXT NOT NULL, target_on VARCHAR(10) NOT NULL, status VARCHAR(20) NOT NULL, progress INT NOT NULL DEFAULT 0, version INT NOT NULL DEFAULT 1, created_by INT NOT NULL, updated_by INT NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(updated_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_plan_entries (
+ id INT AUTO_INCREMENT PRIMARY KEY, plan_id INT NOT NULL, progress INT NOT NULL, note TEXT NOT NULL, goal_snapshot TEXT NOT NULL, actions_snapshot TEXT NOT NULL, recorded_by INT NOT NULL, created_at DATETIME NOT NULL, FOREIGN KEY(plan_id) REFERENCES gd_adv_plans(id) ON DELETE RESTRICT, FOREIGN KEY(recorded_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_consents (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NOT NULL, policy_id INT NOT NULL, authority VARCHAR(30) NOT NULL, state VARCHAR(20) NOT NULL, evidence_ref VARCHAR(200) NOT NULL, expires_on VARCHAR(10) NOT NULL, recorded_by INT NOT NULL, recorded_at DATETIME NOT NULL, withdrawn_by INT NULL, withdrawn_at DATETIME NULL, version INT NOT NULL DEFAULT 1, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(policy_id) REFERENCES gd_adv_policies(id) ON DELETE RESTRICT, FOREIGN KEY(recorded_by) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(withdrawn_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_referrals (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NOT NULL, destination VARCHAR(160) NOT NULL, destination_type VARCHAR(30) NOT NULL, consent_id INT NULL, exception_policy_id INT NULL, basis VARCHAR(30) NOT NULL, justification TEXT NOT NULL, minimum_summary TEXT NOT NULL, status VARCHAR(20) NOT NULL, scheduled_at DATETIME NULL, evidence TEXT NOT NULL, version INT NOT NULL DEFAULT 1, created_by INT NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(consent_id) REFERENCES gd_adv_consents(id) ON DELETE RESTRICT, FOREIGN KEY(exception_policy_id) REFERENCES gd_adv_policies(id) ON DELETE RESTRICT, FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_outcomes (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NOT NULL, measure VARCHAR(30) NOT NULL, score INT NULL, source VARCHAR(30) NOT NULL, note TEXT NOT NULL, recorded_by INT NOT NULL, observed_on VARCHAR(10) NOT NULL, created_at DATETIME NOT NULL, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(recorded_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_rules (
+ id INT AUTO_INCREMENT PRIMARY KEY, counselor_id INT NOT NULL, weekday INT NOT NULL, starts_time VARCHAR(5) NOT NULL, ends_time VARCHAR(5) NOT NULL, slot_minutes INT NOT NULL, buffer_minutes INT NOT NULL, effective_from VARCHAR(10) NOT NULL, effective_to VARCHAR(10) NOT NULL, active TINYINT NOT NULL DEFAULT 1, version INT NOT NULL DEFAULT 1, created_by INT NOT NULL, created_at DATETIME NOT NULL, FOREIGN KEY(counselor_id) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT, INDEX(counselor_id,active)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_blocks (
+ id INT AUTO_INCREMENT PRIMARY KEY, counselor_id INT NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, reason VARCHAR(160) NOT NULL, active TINYINT NOT NULL DEFAULT 1, version INT NOT NULL DEFAULT 1, created_by INT NOT NULL, created_at DATETIME NOT NULL, FOREIGN KEY(counselor_id) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT, INDEX(counselor_id,starts_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_waitlist (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NOT NULL, counselor_id INT NOT NULL, earliest_on VARCHAR(10) NOT NULL, latest_on VARCHAR(10) NOT NULL, priority VARCHAR(20) NOT NULL, status VARCHAR(20) NOT NULL, appointment_id INT NULL, version INT NOT NULL DEFAULT 1, created_by INT NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(counselor_id) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(appointment_id) REFERENCES gd_appointments(id) ON DELETE RESTRICT, FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_urgent (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NOT NULL, policy_id INT NOT NULL, owner_id INT NOT NULL, fallback_id INT NOT NULL, due_at DATETIME NOT NULL, reason TEXT NOT NULL, status VARCHAR(20) NOT NULL, acknowledged_by INT NULL, acknowledged_at DATETIME NULL, resolution TEXT NOT NULL, version INT NOT NULL DEFAULT 1, created_by INT NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(policy_id) REFERENCES gd_adv_policies(id) ON DELETE RESTRICT, FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(fallback_id) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(acknowledged_by) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_programs (
+ id INT AUTO_INCREMENT PRIMARY KEY, program_id INT NOT NULL UNIQUE, objectives TEXT NOT NULL, target_group VARCHAR(200) NOT NULL, resources TEXT NOT NULL, budget DECIMAL(10,2) NOT NULL DEFAULT 0, expected_participation INT NOT NULL, period_from VARCHAR(10) NOT NULL, period_to VARCHAR(10) NOT NULL, version INT NOT NULL DEFAULT 1, updated_by INT NOT NULL, updated_at DATETIME NOT NULL, FOREIGN KEY(program_id) REFERENCES gd_programs(id) ON DELETE RESTRICT, FOREIGN KEY(updated_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_reviews (
+ id INT AUTO_INCREMENT PRIMARY KEY, program_id INT NOT NULL, objectives_snapshot TEXT NOT NULL, resources_snapshot TEXT NOT NULL, result_note TEXT NOT NULL, lessons TEXT NOT NULL, rating INT NOT NULL, recorded_by INT NOT NULL, created_at DATETIME NOT NULL, FOREIGN KEY(program_id) REFERENCES gd_programs(id) ON DELETE RESTRICT, FOREIGN KEY(recorded_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_checks (
+ id INT AUTO_INCREMENT PRIMARY KEY, kind VARCHAR(30) NOT NULL, result VARCHAR(20) NOT NULL, evidence_ref VARCHAR(200) NOT NULL, details TEXT NOT NULL, next_due VARCHAR(10) NOT NULL, recorded_by INT NOT NULL, created_at DATETIME NOT NULL, FOREIGN KEY(recorded_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_log (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NULL, event_id INT NULL, action VARCHAR(60) NOT NULL, entity_id INT NOT NULL, detail TEXT NULL, actor_id INT NOT NULL, created_at DATETIME NOT NULL, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(event_id) REFERENCES gd_events(id) ON DELETE RESTRICT, FOREIGN KEY(actor_id) REFERENCES users(id) ON DELETE RESTRICT, INDEX(ticket_id,created_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_dispatch (
+ id INT AUTO_INCREMENT PRIMARY KEY, item_type VARCHAR(30) NOT NULL, item_id INT NOT NULL, recipient_id INT NOT NULL, day_key VARCHAR(10) NOT NULL, delivered_at DATETIME NOT NULL, UNIQUE(item_type,item_id,recipient_id,day_key), FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_requests (
+ id INT AUTO_INCREMENT PRIMARY KEY, user_id INT NOT NULL, token CHAR(32) NOT NULL, created_at DATETIME NOT NULL, UNIQUE(user_id,token), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_tasks (
+ id INT AUTO_INCREMENT PRIMARY KEY, ticket_id INT NULL, event_id INT NULL, owner_id INT NOT NULL, kind VARCHAR(30) NOT NULL, due_at DATETIME NOT NULL, status VARCHAR(20) NOT NULL, note TEXT NOT NULL, completion_note TEXT NULL, version INT NOT NULL DEFAULT 1, completed_at DATETIME NULL, created_by INT NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(event_id) REFERENCES gd_events(id) ON DELETE RESTRICT, FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT, INDEX(status,due_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS gd_adv_appointments (
+ appointment_id INT PRIMARY KEY, ticket_id INT NULL, buffer_minutes INT NOT NULL DEFAULT 0, attendance_state VARCHAR(20) NOT NULL DEFAULT 'scheduled', reason TEXT NOT NULL, version INT NOT NULL DEFAULT 1, recorded_by INT NOT NULL, updated_at DATETIME NOT NULL, FOREIGN KEY(appointment_id) REFERENCES gd_appointments(id) ON DELETE RESTRICT, FOREIGN KEY(ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT, FOREIGN KEY(recorded_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;

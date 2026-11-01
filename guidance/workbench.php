@@ -101,50 +101,11 @@ function gw_average(array $values, int $digits = 1): string|float {
 }
 /** Aggregate-only output: raw case/student IDs, text and rating comments never leave this function. */
 function gw_analytics(array $u, array $f): array {
-    gx(g_staff($u) !== null);
-    $where = ["t.office_code='guide'"]; $args = [];
-    if ($f['from']) { $where[] = 't.created_at>=?'; $args[]=$f['from'].' 00:00:00'; }
-    if ($f['to']) { $where[] = 't.created_at<?'; $args[]=(new DateTimeImmutable($f['to']))->modify('+1 day')->format('Y-m-d'); }
-    if ($f['category']) { $where[]='t.category_id=?'; $args[]=$f['category']; }
-    if ($f['counselor']) { $where[]='t.assigned_to=?'; $args[]=$f['counselor']; }
-    if (gr_ready()) foreach (['program','year_level','section'] as $field) if (($f[$field]??'')!=='') { $where[]='EXISTS(SELECT 1 FROM gd_plus_students m WHERE m.user_id=t.user_id AND m.'.$field.'=?)'; $args[]=$f[$field]; }
-    $cases = gall("SELECT t.id,t.category_id,t.created_at,t.resolved_at,t.status,t.priority,COALESCE(c.name,'Uncategorized') AS category,COALESCE(u.full_name,'Unassigned') AS counselor,f.rating,(SELECT MIN(r.created_at) FROM replies r JOIN users staff ON staff.id=r.user_id WHERE r.ticket_id=t.id AND r.is_internal=0 AND staff.role='admin') AS first_reply FROM tickets t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.assigned_to LEFT JOIN gd_feedback f ON f.ticket_id=t.id WHERE ".implode(' AND ',$where),$args);
-    $groups = ['Status'=>[],'Priority'=>[],'Service demand'=>[],'Assigned workload'=>[],'Backlog age'=>[],'Intake month'=>[],'Resolution time'=>[],'Satisfaction rating'=>[],'Resolved within target'=>[]];
-    $response=[]; $resolution=[]; $ratings=[]; $open=0; $overdue=0; $met=0; $finished=0;
-    foreach ($cases as $t) {
-        $t=gr_enrich($t);
-        foreach (['Status'=>'status','Priority'=>'priority','Service demand'=>'category'] as $name=>$key) $groups[$name][$t[$key]]=($groups[$name][$t[$key]] ?? 0)+1;
-        $month=substr($t['created_at'],0,7); $groups['Intake month'][$month]=($groups['Intake month'][$month] ?? 0)+1;
-        if (gw_open($t)) {
-            $open++; if (in_array($t['status'], WORKING_STATUSES, true) && gw_due($t)<=time()) $overdue++;
-            $key=$t['counselor']; $groups['Assigned workload'][$key]=($groups['Assigned workload'][$key] ?? 0)+1;
-            $days=max(0,(time()-strtotime($t['created_at']))/86400); $bucket=$days<2?'Under 2 days':($days<7?'2–6 days':($days<30?'7–29 days':'30+ days'));
-            $groups['Backlog age'][$bucket]=($groups['Backlog age'][$bucket] ?? 0)+1;
-        }
-        if ($t['first_reply']) $response[]=max(0,(strtotime($t['first_reply'])-strtotime($t['created_at']))/3600);
-        if ($t['resolved_at']) {
-            $hours=max(0,(strtotime($t['resolved_at'])-strtotime($t['created_at']))/3600); $resolution[]=$hours; $finished++;
-            $within=strtotime($t['resolved_at'])<=gw_due($t); if($within)$met++;
-            $bucket=$hours<24?'Under 24 hours':($hours<72?'24–71 hours':($hours<168?'72–167 hours':'168+ hours'));
-            $groups['Resolution time'][$bucket]=($groups['Resolution time'][$bucket] ?? 0)+1;
-            $key=$within?'Within target':'Outside target'; $groups['Resolved within target'][$key]=($groups['Resolved within target'][$key] ?? 0)+1;
-        }
-        if ($t['rating'] !== null) { $ratings[]=(int)$t['rating'];$key=$t['rating'].' / 5';$groups['Satisfaction rating'][$key]=($groups['Satisfaction rating'][$key] ?? 0)+1; }
+    require_once __DIR__.'/reports.php';
+    $report = rp_report($u, $f);
+    $out = [];
+    foreach ($report['sections'] as $section) {
+        $out[$section['title']] = array_map(fn ($item) => [$item['label'], $item['display']], $section['items']);
     }
-    ksort($groups['Intake month']);
-    // Every exposed count/mean uses the same suppression rule, including chart data and CSV.
-    $out = ['Overview'=>[
-        ['Requests in intake cohort',gw_suppressed(count($cases))],['Open requests (including waiting)',gw_suppressed($open)],['Overdue working requests',gw_suppressed($overdue)],
-        ['Mean first response hours',gw_average($response)],['Mean resolution hours',gw_average($resolution)],['Mean satisfaction / 5',gw_average($ratings)]
-    ]];
-    // A rate is withheld if either underlying cell is small; otherwise it could disclose a suppressed complement.
-    $out['Overview'][]=['Resolved within target %',($met<5||($finished-$met)<5)?'Suppressed (<5)':round(100*$met/$finished,1)];
-    foreach ($groups as $name=>$buckets) { $out[$name]=[];foreach($buckets as $label=>$n)$out[$name][]=[$label,gw_suppressed($n)]; }
-    $ew=[];$ea=[];
-    if($f['from']){$ew[]='e.starts_at>=?';$ea[]=$f['from'].' 00:00:00';}
-    if($f['to']){$ew[]='e.starts_at<?';$ea[]=(new DateTimeImmutable($f['to']))->modify('+1 day')->format('Y-m-d');}
-    $filter=$ew?' WHERE '.implode(' AND ',$ew):'';
-    $out['Activity attendance (date filter only)']=array_map(fn($r)=>[$r['attendance'],gw_suppressed((int)$r['n'])],gall('SELECT i.attendance,COUNT(*) n FROM gd_invites i JOIN gd_events e ON e.id=i.event_id'.$filter.' GROUP BY i.attendance',$ea));
-    $out['Activity RSVP (date filter only)']=array_map(fn($r)=>[$r['state'],gw_suppressed((int)$r['n'])],gall('SELECT i.state,COUNT(*) n FROM gd_invites i JOIN gd_events e ON e.id=i.event_id'.$filter.' GROUP BY i.state',$ea));
     return $out;
 }
