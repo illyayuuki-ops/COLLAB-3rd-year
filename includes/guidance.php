@@ -53,7 +53,9 @@ function g_case(array $u, array $t): bool
 }
 function g_staff_login(array $u): bool
 {
-    return $u['role'] === 'admin' && ($u['office_code'] === STAFF_OFFICE || g_staff($u) !== null);
+    // Allow admin login from any of the 12 departments
+    $allowedOffices = ['registrar','finance','hr','itdc','sao','admission','main','library','marketing','aea','guide','acads'];
+    return $u['role'] === 'admin' && in_array($u['office_code'] ?? '', $allowedOffices, true);
 }
 function g_session_start(array $u): void
 {
